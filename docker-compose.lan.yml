@@ -1,0 +1,9 @@
+# Optional override: also publish Agent Flow on ONE private address (LAN or tailscale IP).
+# Never use 0.0.0.0 / a public IP. Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d --build
+# Set AGENT_FLOW_BIND (private IP) and AGENT_FLOW_PORT in .env. AGENT_FLOW_ALLOWED_HOST must
+# match the Host header browsers send, e.g. "<bind-ip>:<port>" or the tailscale hostname:port.
+services:
+  agent-flow:
+    ports:
+      - "${AGENT_FLOW_BIND:?set AGENT_FLOW_BIND to a LAN/tailscale IP}:${AGENT_FLOW_PORT:-3001}:3001"
