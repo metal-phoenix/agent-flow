@@ -9,13 +9,17 @@
 
 FROM node:22-slim AS builder
 WORKDIR /build
+# Pin the pnpm version via corepack (reads "packageManager" from package.json
+# below) so the resolved build-script allowlist format can't drift out from
+# under pnpm-workspace.yaml's `allowBuilds` on an unattended image rebuild.
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY app/package.json app/package.json
 COPY extension/package.json extension/package.json
 COPY web/package.json web/package.json
-RUN pnpm install --frozen-lockfile
+RUN corepack install && pnpm install --frozen-lockfile
 
 COPY . .
 RUN NEXT_TELEMETRY_DISABLED=1 pnpm run build:app

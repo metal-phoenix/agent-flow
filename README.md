@@ -118,6 +118,8 @@ pnpm run setup      # configure Claude Code hooks (one-time)
 pnpm run dev        # start dev server + event relay
 ```
 
+**Note**: pnpm version is pinned to 10.34.9 via `packageManager` in `package.json` and enforced by corepack, so the Docker build can't silently drift to a newer pnpm that reads dependency build-script allowlists differently. Only esbuild is allowlisted to run build scripts (`pnpm-workspace.yaml`'s `allowBuilds`).
+
 `pnpm run dev` starts both the Next.js dev server and an event relay that receives Claude Code events and streams them to the browser via SSE.
 
 Other scripts:

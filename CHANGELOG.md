@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased (metal-phoenix fork — 2026-11-18, build job 296)
+
+### Why
+Docker build was failing with `ERR_PNPM_IGNORED_BUILDS: Ignored build scripts: esbuild@0.20.2, esbuild@0.27.7`. Root cause: `Dockerfile` ran `corepack enable` without pinning a pnpm version, so corepack resolved to whatever is currently latest (pnpm 12.21.0 in this environment). Meanwhile, `pnpm-workspace.yaml` had the stale `onlyBuiltDependencies` key which pnpm 12.x no longer reads — it now reads `allowBuilds` (a map). Since the key was ignored, pnpm 12 blocked esbuild's postinstall script entirely, breaking the build.
+
+### Added
+- `package.json`: added `"packageManager": "pnpm@10.34.9"` to pin the pnpm version via corepack, preventing silent drift to a future incompatible version. Pinned to the latest 10.x release (same major line `.github/workflows/ci.yml` already installs via `pnpm/action-setup@v4 version: 10`) rather than the newer 12.x, so Docker and CI stay on the same pnpm major version instead of diverging.
+- `Dockerfile`: added `ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0` before `RUN corepack enable`, and changed `RUN pnpm install --frozen-lockfile` to `RUN corepack install && pnpm install --frozen-lockfile` to ensure the pinned version is actually installed before use
+- `pnpm-workspace.yaml`: replaced stale `onlyBuiltDependencies: [esbuild, sharp]` with `allowBuilds: {esbuild: true}` (sharp was dropped — it has no lifecycle scripts, only an npm `build` script, so it was never blocked and didn't need allowlisting; least-privilege: only esbuild's script runs)
+
+### Verified
+- Reproduced exact `ERR_PNPM_IGNORED_BUILDS` error in a clean temp dir with pnpm 12.21.0 before fix
+- Confirmed `pnpm install --frozen-lockfile` and `pnpm run build:app` both succeed after fix, with pnpm 10.34.9 pinned (the version now in `package.json`)
+- Verified both esbuild@0.20.2 and esbuild@0.27.7 postinstall scripts run and no other package's build script runs
+- Confirmed the same `allowBuilds` key is also read correctly by pnpm 12.21.0, so the fix isn't tied to one specific pnpm major version
+- `docker build` itself could not be run (no docker daemon in this sandbox); the pnpm/corepack steps above are what the Dockerfile's builder stage executes, but the full image build remains open for Prodigy/CI verification
+
+### Rollback
+Revert this commit. `pnpm-lock.yaml` is unchanged, so no lockfile regen is needed.
+
 ## Unreleased (metal-phoenix fork — 2026-11-17, deploy job 274)
 
 ### Why

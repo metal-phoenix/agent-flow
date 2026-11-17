@@ -2,9 +2,8 @@ packages:
   - extension
   - web
 
-onlyBuiltDependencies:
-  - esbuild
-  - sharp
+allowBuilds:
+  esbuild: true
 
 overrides:
   shell-quote: '>=1.9.0'
