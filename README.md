@@ -169,6 +169,25 @@ For detailed audit findings and production deployment guidance, see [docs/AUDIT-
 
 **Attribution:** This is metal-phoenix's fork of patoles/agent-flow, created by Simon Patole for Antics (https://antics.gg). Apache-2.0 licensed — see LICENSE.
 
+### Deploy on Prodigy
+
+```bash
+cp .env.example .env          # edit paths; .env is git-ignored
+docker compose up -d --build
+```
+
+- **No public port**: the service only `expose`s 3001 on the external docker network `lifeos` (override with `LIFEOS_NETWORK`). The LifeOS proxy must join that network; see [docs/ha/lifeos-proxy.md](docs/ha/lifeos-proxy.md) for the route needed.
+- **Transcripts, read-only**: `BOB1_TRANSCRIPTS` (default `/home/scott/builder/home/.claude/projects`) → `/transcripts/bob1`; `BOB2_TRANSCRIPTS` (default `/srv/agent-flow/bob2-transcripts`) → `/transcripts/bob2`. Roots are set through `AGENT_FLOW_ROOTS` in `docker-compose.yml`.
+- **Bob 2** is not reachable from Prodigy directly. On Bob 2's runner, schedule `scripts/ship-transcripts.sh scott@prodigy /srv/agent-flow/bob2-transcripts` (rsync over ssh, `*.jsonl` only, one-way, needs an ssh key for that account and `rsync` on both ends). Alternative: NFS-export the WSL folder (see INTEGRATION-PLAN.md). Until one is set up the Bob 2 folder is simply empty.
+- **Hooks are not installed** (`AGENT_FLOW_SETUP_HOOKS` unset) and telemetry does not exist in this fork.
+- `AGENT_FLOW_ALLOWED_HOST` must equal the Host header the proxy sends (default `agent-flow:3001`).
+
+### Stats endpoint
+
+`GET /stats?days=7` (full JSON) and `GET /stats/flat` (flat keys for Home Assistant REST sensors) report helpers running now (sub-agent transcripts modified in the last 120 s), helpers/tool calls/tokens/cost per job, per model family and per day. A "job" is the Claude project directory (encoded working directory). Costs are **API-equivalent estimates**: Max-plan work is not billed per token. Prices live in one file, [config/pricing.json](config/pricing.json) (USD per million tokens; override with `AGENT_FLOW_PRICING`); check them against current Anthropic pricing. Transcripts are only read, never written.
+
+Home Assistant files (Build view, REST sensors, LifeOS proxy spec) are in [docs/ha/](docs/ha/). Not yet tested against a live Home Assistant.
+
 ## License
 
 Apache 2.0 — see [LICENSE](LICENSE) for details.

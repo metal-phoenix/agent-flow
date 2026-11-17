@@ -29,6 +29,7 @@ ENV NODE_ENV=production
 ENV AGENT_FLOW_HOST=127.0.0.1
 
 COPY --from=builder /build/app/dist ./app/dist
+COPY config /app/config
 
 # node:*-slim images ship an unprivileged "node" user (uid 1000) already.
 USER node

@@ -1,0 +1,9 @@
+{
+  "_comment": "API-equivalent list prices in USD per million tokens. Max-plan work is NOT billed per token; these figures only estimate what the same usage would cost on the API. Edit here (or point AGENT_FLOW_PRICING at another file). Models are matched by longest key that is a substring of the model id; 'default' is used when nothing matches. Verify against current Anthropic pricing before relying on the numbers.",
+  "models": {
+    "opus": { "input": 15, "output": 75, "cacheRead": 1.5, "cacheWrite": 18.75 },
+    "sonnet": { "input": 3, "output": 15, "cacheRead": 0.3, "cacheWrite": 3.75 },
+    "haiku": { "input": 1, "output": 5, "cacheRead": 0.1, "cacheWrite": 1.25 }
+  },
+  "default": { "input": 3, "output": 15, "cacheRead": 0.3, "cacheWrite": 3.75 }
+}

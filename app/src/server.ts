@@ -7,6 +7,9 @@ import { exec, execFile } from 'child_process'
 
 import { createRelay } from '../../scripts/relay'
 import { serveStatic } from './static'
+import { computeStats, flattenStats } from './stats'
+import { resolveTranscriptRoots } from '../../extension/src/constants'
+import * as os from 'os'
 import { isAllowedRequestHost } from '../../extension/src/request-guard'
 
 interface ServerOptions {
@@ -37,6 +40,21 @@ export async function startServer(options: ServerOptions) {
     // SSE endpoint
     if (req.url === '/events') {
       return relay.handleSSE(req, res)
+    }
+
+    // Stats (read-only JSON). /stats = full detail, /stats/flat = HA sensors.
+    if (req.method === 'GET' && req.url && (req.url === '/stats' || req.url.startsWith('/stats?') || req.url === '/stats/flat' || req.url.startsWith('/stats/flat?'))) {
+      try {
+        const u = new URL(req.url, 'http://localhost')
+        const days = Math.min(90, Math.max(1, Number(u.searchParams.get('days')) || 7))
+        const stats = computeStats({ roots: resolveTranscriptRoots(os.homedir()), days })
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+        res.end(JSON.stringify(u.pathname === '/stats/flat' ? flattenStats(stats) : stats))
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'stats failed' }))
+      }
+      return
     }
 
     // Static files (UI)
