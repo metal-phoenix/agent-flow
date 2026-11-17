@@ -2,6 +2,7 @@
  * Shared constants for the extension.
  * Centralizes magic numbers and strings scattered across modules.
  */
+import * as path from 'path'
 
 // ─── Timing ──────────────────────────────────────────────────────────────────
 
@@ -186,6 +187,23 @@ export const SUBAGENT_ID_SUFFIX_LENGTH = 6
  *  @param index  A 1-based index for sequential numbering. */
 export function generateSubagentFallbackName(id: string, index: number): string {
   return `subagent-${id.length > SUBAGENT_ID_SUFFIX_LENGTH ? id.slice(-SUBAGENT_ID_SUFFIX_LENGTH) : index}`
+}
+
+/**
+ * Claude transcript roots to watch, from `AGENT_FLOW_ROOTS` (comma-separated
+ * absolute paths), or the default `~/.claude/projects` when unset.
+ *
+ * Lets one relay instance watch transcripts synced or mounted in from other
+ * machines (e.g. a second machine's `~/.claude/projects` reachable over NFS),
+ * in addition to its own.
+ */
+export function resolveTranscriptRoots(homedir: string, env: NodeJS.ProcessEnv = process.env): string[] {
+  const raw = env.AGENT_FLOW_ROOTS
+  if (!raw || raw.trim() === '') {
+    return [path.join(homedir, '.claude', 'projects')]
+  }
+  const roots = raw.split(',').map(r => r.trim()).filter(r => r !== '')
+  return roots.length > 0 ? roots : [path.join(homedir, '.claude', 'projects')]
 }
 
 /** Extract a child agent name from a tool_use input block (Agent or Task tool).

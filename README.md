@@ -143,22 +143,31 @@ Created by [Simon Patole](https://github.com/patoles), for [Antics](https://anti
 
 ## Privacy & Telemetry
 
-Agent Flow ships **opt-out** anonymous usage telemetry, enabled by default only
-in the published `npx agent-flow-app` binary. `pnpm run dev` and the VS Code
-extension emit nothing. Only aggregate events are sent — session count,
-duration, event count, OS/arch, Agent Flow version, distinct model IDs
-observed, which runtimes were watched, and error class names. Prompts, file
-paths, tool calls, user info, and environment variables are never sent.
+This fork (metal-phoenix) has **completely removed all telemetry** — there is no opt-out,
+no installation ID, and no outbound connections to any telemetry endpoints. The Agent Flow
+code that collected session metadata has been deleted entirely (`scripts/telemetry.ts` and
+`scripts/telemetry/*.ts`), and Next.js's own built-in telemetry is also disabled.
 
-- **Turn off:** `export AGENT_FLOW_TELEMETRY=false` or `export DO_NOT_TRACK=1`
-  (disabled installs write zero state to disk — no `~/.agent-flow/` directory)
-- **Inspect the payload:** `cat ~/.agent-flow/telemetry/events.jsonl`
-- **Full schema + exact fields:** see the v0.8.1 entry in
-  [extension/CHANGELOG.md](extension/CHANGELOG.md) or the `serialize()` function
-  in [scripts/telemetry.ts](scripts/telemetry.ts)
-- **Reset your anonymous identity:** delete `~/.agent-flow/installation-id` —
-  a fresh random UUIDv4 will be generated on next run
+The upstream Agent Flow (patoles/agent-flow) ships opt-out anonymous usage telemetry in its
+published `npx agent-flow-app` binary. For upstream documentation on that behavior, see the v0.8.1
+entry in [extension/CHANGELOG.md](extension/CHANGELOG.md).
 
+## metal-phoenix fork
+
+This is metal-phoenix's fork of [patoles/agent-flow](https://github.com/patoles/agent-flow), created for production deployment and security hardening.
+
+**Key differences from upstream:**
+
+1. **Telemetry fully removed** — no installation IDs, no telemetry data collection, no outbound endpoints
+2. **Hook installation is opt-in** — pass `--setup-hooks` or set `AGENT_FLOW_SETUP_HOOKS=true` to enable Claude Code hooks; default behavior uses transcript tailing only
+3. **Configurable server binding** — `--host` flag or `AGENT_FLOW_HOST` env var for binding address (default `127.0.0.1`); when binding to non-loopback, set `AGENT_FLOW_ALLOWED_HOST` to match your reverse proxy's Host header
+4. **Multi-root transcript watching** — `AGENT_FLOW_ROOTS` env var (comma-separated paths) to watch transcripts from multiple machines over NFS or sync
+5. **Containerized** — Dockerfile and `.dockerignore` for running the standalone server in production (node:22-slim, non-root user)
+6. **Dependency vulnerabilities fixed** — line-by-line audit completed; `next` and `vite` bumped, transitive deps pinned; `pnpm audit` reduced from 64 to 11 (0 critical)
+
+For detailed audit findings and production deployment guidance, see [docs/AUDIT-2026-11.md](docs/AUDIT-2026-11.md) and [docs/INTEGRATION-PLAN.md](docs/INTEGRATION-PLAN.md).
+
+**Attribution:** This is metal-phoenix's fork of patoles/agent-flow, created by Simon Patole for Antics (https://antics.gg). Apache-2.0 licensed — see LICENSE.
 
 ## License
 

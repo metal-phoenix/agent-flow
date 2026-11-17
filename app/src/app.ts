@@ -7,7 +7,7 @@
  *   3. Serves the visualizer UI and streams events via SSE
  *   4. Opens the browser automatically
  *
- * Usage: npx @agent-flow/app [--port <number>] [--no-open]
+ * Usage: npx @agent-flow/app [--port <number>] [--host <address>] [--no-open] [--setup-hooks]
  */
 import { parseArgs } from './args'
 import { ensureSetup } from '../../scripts/setup'
@@ -17,12 +17,20 @@ const args = parseArgs(process.argv.slice(2))
 
 console.log('Agent Flow\n')
 
-// Ensure hooks are configured
-ensureSetup()
+// Hooks are opt-in (--setup-hooks / AGENT_FLOW_SETUP_HOOKS=true). Transcript
+// tailing (scripts/relay.ts) already watches ~/.claude/projects without them;
+// hooks only add zero-latency permission-prompt detection on top of that, and
+// installing them means writing into the user's ~/.claude/settings.json.
+if (args.setupHooks) {
+  ensureSetup()
+} else {
+  console.log('Hooks not installed (pass --setup-hooks to enable zero-latency permission events). Watching transcripts directly.\n')
+}
 
 // Start the server
 startServer({
   port: args.port,
+  host: args.host,
   openBrowser: args.open,
   workspace: process.cwd(),
   verbose: args.verbose,

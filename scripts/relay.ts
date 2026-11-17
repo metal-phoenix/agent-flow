@@ -19,41 +19,19 @@ import { CodexSessionWatcher } from '../extension/src/codex-session-watcher'
 import {
   INACTIVITY_TIMEOUT_MS, SCAN_INTERVAL_MS, ACTIVE_SESSION_AGE_S, POLL_FALLBACK_MS,
   SESSION_ID_DISPLAY, SYSTEM_PROMPT_BASE_TOKENS, ORCHESTRATOR_NAME,
-  HOOK_SERVER_NOT_STARTED, WORKSPACE_HASH_LENGTH,
+  HOOK_SERVER_NOT_STARTED, WORKSPACE_HASH_LENGTH, resolveTranscriptRoots,
 } from '../extension/src/constants'
 import { setLogLevel } from '../extension/src/logger'
-import type { TelemetryClient } from './telemetry'
 
 const MAX_EVENT_BUFFER = 5000
 const DISCOVERY_DIR = path.join(os.homedir(), '.claude', 'agent-flow')
-const CLAUDE_DIR = path.join(os.homedir(), '.claude', 'projects')
+/** Transcript roots to watch — `~/.claude/projects` by default, or every path
+ *  in `AGENT_FLOW_ROOTS` (comma-separated) when set, e.g. to also watch a
+ *  second machine's project folder mounted/synced locally. */
+const CLAUDE_ROOTS = resolveTranscriptRoots(os.homedir())
 
 let relayCreated = false
 let verbose = false
-let sessionEventCount = 0
-/** Distinct model IDs seen across all watched sessions during this relay session.
- *  Populated from `model_detected` events (emitted by both the Claude transcript
- *  parser and the Codex rollout parser). Read at session_end for telemetry. */
-const observedModels = new Set<string>()
-
-// agent-flow-app version. Inlined by esbuild at bundle time via `define`.
-// In dev (running from source via tsx), falls back to reading app/package.json.
-declare const AGENT_FLOW_APP_VERSION: string | undefined
-function resolveAgentFlowVersion(): string {
-  try {
-    if (typeof AGENT_FLOW_APP_VERSION === 'string' && AGENT_FLOW_APP_VERSION) {
-      return AGENT_FLOW_APP_VERSION
-    }
-  } catch { /* ReferenceError in unbundled dev — fall through */ }
-  try {
-    const pkgPath = path.join(__dirname, '..', 'app', 'package.json')
-    if (fs.existsSync(pkgPath)) {
-      return JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version ?? '0.0.0'
-    }
-  } catch { /* ignore */ }
-  return '0.0.0'
-}
-
 function log(...args: unknown[]) {
   if (verbose) console.log(...args)
 }
@@ -81,11 +59,6 @@ function broadcast(data: string) {
 const eventBuffer = new Map<string, AgentEvent[]>()
 
 function broadcastEvent(event: AgentEvent) {
-  sessionEventCount++
-  if (event.type === 'model_detected') {
-    const m = (event.payload as { model?: unknown } | undefined)?.model
-    if (typeof m === 'string' && m.length > 0) observedModels.add(m)
-  }
   const sid = event.sessionId?.slice(0, SESSION_ID_DISPLAY) || '?'
   log(`[event] ${event.type} (session ${sid})`)
 
@@ -239,7 +212,7 @@ function watchSession(sessionId: string, filePath: string) {
 
   session.pollTimer = setInterval(() => {
     // Entering a worktree moves the transcript to another project folder
-    if (followSession(watcherDelegate, parser, session, CLAUDE_DIR)) {
+    if (followSession(watcherDelegate, parser, session, CLAUDE_ROOTS)) {
       log(`[session] ${sessionId.slice(0, SESSION_ID_DISPLAY)} moved to ${session.filePath}`)
       session.fileWatcher?.close()
       try { session.fileWatcher = watchTranscript() } catch {}
@@ -277,9 +250,8 @@ function readNewLines(sessionId: string) {
 
 // ─── Session scanner ────────────────────────────────────────────────────────
 
-function scanForActiveSessions(workspace: string) {
-  if (!fs.existsSync(CLAUDE_DIR)) return
-
+/** Project dirs under `root` whose encoded name matches `workspace` (same-machine match). */
+function matchingProjectDirs(root: string, workspace: string): string[] {
   let resolved = workspace
   try { resolved = fs.realpathSync(resolved) } catch {}
   const encoded = resolved.replace(/[^a-zA-Z0-9]/g, '-')
@@ -289,42 +261,68 @@ function scanForActiveSessions(workspace: string) {
   // encodes `C--...`, so exact string matching never found the project dir there.
   const encodedFolded = foldPathCase(encoded)
   try {
-    for (const dir of fs.readdirSync(CLAUDE_DIR, { withFileTypes: true })) {
+    for (const dir of fs.readdirSync(root, { withFileTypes: true })) {
       if (!dir.isDirectory()) continue
       const nameFolded = foldPathCase(dir.name)
       if (nameFolded === encodedFolded || nameFolded.startsWith(encodedFolded + '-')) {
-        dirsToScan.push(path.join(CLAUDE_DIR, dir.name))
+        dirsToScan.push(path.join(root, dir.name))
       }
     }
   } catch {
     // readdir failed — fall back to the exact-match dir if it exists
-    const projectDir = path.join(CLAUDE_DIR, encoded)
+    const projectDir = path.join(root, encoded)
     if (fs.existsSync(projectDir)) dirsToScan.push(projectDir)
   }
+  return dirsToScan
+}
 
-  for (const dirPath of dirsToScan) {
-    try {
-      for (const file of fs.readdirSync(dirPath)) {
-        if (!file.endsWith('.jsonl')) continue
-        const filePath = path.join(dirPath, file)
-        const stat = fs.statSync(filePath)
-        const sessionId = path.basename(file, '.jsonl')
+/** Every project dir under `root`, unfiltered — used for extra roots (AGENT_FLOW_ROOTS)
+ *  pointed at another machine's `.claude/projects`, where workspace-path encoding won't
+ *  match this machine's cwd. */
+function allProjectDirs(root: string): string[] {
+  try {
+    return fs.readdirSync(root, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .map(d => path.join(root, d.name))
+  } catch { return [] }
+}
 
-        // Subagent writes (including nested workflows/wf_*/ files) keep a
-        // session alive when the main JSONL is stale. Only walk the tree when
-        // the main file alone doesn't qualify.
-        let newestMtime = stat.mtimeMs
-        if ((Date.now() - newestMtime) / 1000 > ACTIVE_SESSION_AGE_S) {
-          const subMtime = newestSubagentMtime(path.join(dirPath, sessionId, 'subagents'))
-          if (subMtime > newestMtime) newestMtime = subMtime
-        }
+function scanDirForActiveSessions(dirPath: string) {
+  try {
+    for (const file of fs.readdirSync(dirPath)) {
+      if (!file.endsWith('.jsonl')) continue
+      const filePath = path.join(dirPath, file)
+      const stat = fs.statSync(filePath)
+      const sessionId = path.basename(file, '.jsonl')
 
-        const ageSeconds = (Date.now() - newestMtime) / 1000
-        if (ageSeconds <= ACTIVE_SESSION_AGE_S && !sessions.has(sessionId)) {
-          watchSession(sessionId, filePath)
-        }
+      // Subagent writes (including nested workflows/wf_*/ files) keep a
+      // session alive when the main JSONL is stale. Only walk the tree when
+      // the main file alone doesn't qualify.
+      let newestMtime = stat.mtimeMs
+      if ((Date.now() - newestMtime) / 1000 > ACTIVE_SESSION_AGE_S) {
+        const subMtime = newestSubagentMtime(path.join(dirPath, sessionId, 'subagents'))
+        if (subMtime > newestMtime) newestMtime = subMtime
       }
-    } catch {}
+
+      const ageSeconds = (Date.now() - newestMtime) / 1000
+      if (ageSeconds <= ACTIVE_SESSION_AGE_S && !sessions.has(sessionId)) {
+        watchSession(sessionId, filePath)
+      }
+    }
+  } catch {}
+}
+
+function scanForActiveSessions(workspace: string) {
+  // With a single (default) root, only watch sessions whose encoded workspace
+  // path matches this process's cwd — the existing single-machine behavior.
+  // With multiple roots (AGENT_FLOW_ROOTS), each extra root is typically
+  // another machine's `.claude/projects`, where workspace-path encoding is
+  // meaningless here — watch every session under it instead.
+  const multiRoot = CLAUDE_ROOTS.length > 1
+  for (const root of CLAUDE_ROOTS) {
+    if (!fs.existsSync(root)) continue
+    const dirsToScan = multiRoot ? allProjectDirs(root) : matchingProjectDirs(root, workspace)
+    for (const dirPath of dirsToScan) scanDirForActiveSessions(dirPath)
   }
 }
 
@@ -369,7 +367,6 @@ export type RelayRuntimeMode = 'claude' | 'codex' | 'auto'
 export interface RelayOptions {
   workspace: string
   verbose?: boolean
-  telemetry?: TelemetryClient
   /** Which runtimes to watch. Defaults to AGENT_FLOW_RUNTIME env var, or 'auto'.
    *  Mirrors the extension's `agentVisualizer.runtime` setting so users of the
    *  dev relay and `npx agent-flow-app` have a way to opt out of one runtime. */
@@ -420,7 +417,9 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
 
     const resolved = (() => { try { return fs.realpathSync(workspace) } catch { return workspace } })()
     const encoded = resolved.replace(/[^a-zA-Z0-9]/g, '-')
-    const projectDir = path.join(CLAUDE_DIR, encoded)
+    // Low-latency trigger for the primary (first) root only — extra roots from
+    // AGENT_FLOW_ROOTS rely on the SCAN_INTERVAL_MS poll in scanForActiveSessions.
+    const projectDir = path.join(CLAUDE_ROOTS[0], encoded)
     if (fs.existsSync(projectDir)) {
       try {
         projectDirWatcher = fs.watch(projectDir, (_eventType, filename) => {
@@ -446,31 +445,9 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
     codexWatcher.start()
   }
 
-  const telemetry = options.telemetry
-  const sessionStart = Date.now()
   let relayDisposed = false
-  const relaySessionId = `relay-${process.pid}-${Math.floor(sessionStart / 1000)}`
-  sessionEventCount = 0
-
-  const agentFlowVersion = resolveAgentFlowVersion()
-
-  const baseEvent = () => ({
-    session_id: relaySessionId,
-    agent_flow_version: agentFlowVersion,
-    os: os.platform(),
-    arch: os.arch(),
-  })
-
-  telemetry?.emit({ ...baseEvent(), event_type: 'session_start' })
 
   process.on('uncaughtException', (err) => {
-    try {
-      telemetry?.emit({
-        ...baseEvent(),
-        event_type: 'error',
-        error_class: err?.constructor?.name ?? 'Error',
-      })
-    } catch { /* don't let the handler itself crash */ }
     // Preserve default crash-on-uncaught behavior: log, then exit.
     console.error(err)
     process.exit(1)
@@ -527,16 +504,6 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
       // callers or hot-reload could call this twice.
       if (relayDisposed) return
       relayDisposed = true
-      const models = [...observedModels].sort().join(',').slice(0, 128)
-      const runtimes = [wantClaude && 'claude', wantCodex && 'codex'].filter(Boolean).join(',')
-      telemetry?.emit({
-        ...baseEvent(),
-        event_type: 'session_end',
-        duration_s: Math.round((Date.now() - sessionStart) / 1000),
-        event_count: sessionEventCount,
-        models: models || undefined,
-        runtimes: runtimes || undefined,
-      })
       if (wantClaude) {
         removeDiscoveryFile()
         hookServer?.dispose()

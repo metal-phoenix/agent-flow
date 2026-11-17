@@ -4,7 +4,7 @@ import * as http from 'node:http'
 import * as path from 'node:path'
 import Module from 'node:module'
 
-import { isLoopbackHost, isAllowedHookRequest } from '../src/request-guard'
+import { isLoopbackHost, isAllowedHookRequest, isAllowedRequestHost } from '../src/request-guard'
 import type { HookServer as HookServerType } from '../src/hook-server'
 import type { AgentEvent } from '../src/protocol'
 
@@ -20,6 +20,23 @@ describe('isLoopbackHost', () => {
       assert.equal(isLoopbackHost(host), false, host)
     }
     assert.equal(isLoopbackHost(undefined), false)
+  })
+})
+
+describe('isAllowedRequestHost', () => {
+  it('accepts loopback hosts regardless of allowedHost', () => {
+    assert.equal(isAllowedRequestHost('127.0.0.1:3001', undefined), true)
+    assert.equal(isAllowedRequestHost('localhost:3001', 'agent-flow.example.com'), true)
+  })
+
+  it('accepts an exact match on the configured allowedHost', () => {
+    assert.equal(isAllowedRequestHost('agent-flow.example.com', 'agent-flow.example.com'), true)
+  })
+
+  it('rejects a foreign host when allowedHost is unset or does not match', () => {
+    assert.equal(isAllowedRequestHost('attacker.example.com', undefined), false)
+    assert.equal(isAllowedRequestHost('attacker.example.com', 'agent-flow.example.com'), false)
+    assert.equal(isAllowedRequestHost('attacker.example.com', ''), false)
   })
 })
 

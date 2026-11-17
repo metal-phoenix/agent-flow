@@ -26,6 +26,19 @@ export function isLoopbackHost(host: string | undefined): boolean {
 }
 
 /**
+ * True if `host` is a loopback name, or matches `allowedHost` exactly.
+ *
+ * Used by the standalone app server when it's bound to a non-loopback address
+ * (e.g. 0.0.0.0 inside a container, fronted by a reverse proxy). The operator
+ * sets `AGENT_FLOW_ALLOWED_HOST` to whatever Host header the proxy forwards;
+ * without it, a non-loopback bind would reject every request.
+ */
+export function isAllowedRequestHost(host: string | undefined, allowedHost: string | undefined): boolean {
+  if (isLoopbackHost(host)) return true
+  return typeof host === 'string' && typeof allowedHost === 'string' && allowedHost !== '' && host === allowedHost
+}
+
+/**
  * True if a request to the hook server can have come from hook.js (or a legacy
  * Claude Code HTTP hook), not from a web page.
  *
