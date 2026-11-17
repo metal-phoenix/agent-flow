@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased (metal-phoenix fork — 2026-11-17, Prodigy deployment)
+
+### Why
+Put the audited fork live on Prodigy with a Home Assistant "Build" view and usage/cost stats for the helper agents.
+
+### Added
+- `docker-compose.yml` + `.env.example`: no published ports (external docker network), read-only transcript mounts for Bob 1 and Bob 2, env-configurable roots, hooks off, read-only root fs.
+- `GET /stats` and `GET /stats/flat` (app/src/stats.ts, wired in app/src/server.ts): helpers running, per job / model / day tool calls, tokens and API-equivalent cost. Prices in `config/pricing.json` (`AGENT_FLOW_PRICING` override). Costs are labelled API-equivalent (Max plan is not billed per token).
+- `scripts/ship-transcripts.sh`: rsync of Bob 2's transcripts to a Prodigy folder.
+- `docs/ha/`: Home Assistant Build view, REST sensors, and the LifeOS proxy route spec (route itself belongs to the lifeos repo).
+- Tests: app/src/stats.test.ts (cost maths, parsing, aggregation).
+- README: "Deploy on Prodigy" and "Stats endpoint" sections.
+
+### Rollback
+`docker compose down`; revert this commit. No host config is modified.
+
+### Files
+docker-compose.yml, .env.example, .gitignore, Dockerfile, config/pricing.json, app/src/stats.ts, app/src/stats.test.ts, app/src/server.ts, scripts/ship-transcripts.sh, docs/ha/*, README.md, CHANGELOG.md
+
 ## Unreleased (metal-phoenix fork — 2026-11-17)
 
 ### Why

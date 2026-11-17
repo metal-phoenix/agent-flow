@@ -1,0 +1,30 @@
+# Agent Flow on Prodigy (see README "Deploy on Prodigy").
+# - No published ports: reachable only on the docker network (LifeOS proxy joins it).
+# - Transcript roots mounted read-only. Hooks are NOT installed (AGENT_FLOW_SETUP_HOOKS unset).
+# - Telemetry is removed from this fork; nothing to configure.
+# Set values in a local .env (not committed); see .env.example.
+services:
+  agent-flow:
+    build: .
+    image: agent-flow:local
+    container_name: agent-flow
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      AGENT_FLOW_HOST: 0.0.0.0
+      AGENT_FLOW_ROOTS: /transcripts/bob1,/transcripts/bob2
+      AGENT_FLOW_ALLOWED_HOST: ${AGENT_FLOW_ALLOWED_HOST:-agent-flow:3001}
+      AGENT_FLOW_PRICING: /config/pricing.json
+    volumes:
+      - ${BOB1_TRANSCRIPTS:-/home/scott/builder/home/.claude/projects}:/transcripts/bob1:ro
+      - ${BOB2_TRANSCRIPTS:-/srv/agent-flow/bob2-transcripts}:/transcripts/bob2:ro
+      - ./config/pricing.json:/config/pricing.json:ro
+    expose: ["3001"]
+    networks: [lifeos]
+networks:
+  lifeos:
+    # Existing docker network the LifeOS proxy is attached to (create it if absent).
+    external: true
+    name: ${LIFEOS_NETWORK:-lifeos}
