@@ -2,6 +2,10 @@
 
 ## Unreleased (metal-phoenix fork — 2026-11-17)
 
+### Why
+
+Security and privacy hardening based on a line-by-line audit of the patoles/agent-flow fork (see [docs/AUDIT-2026-11.md](docs/AUDIT-2026-11.md)). Addressed three critical findings: opt-out telemetry with a hardcoded third-party endpoint, unconditional `~/.claude/settings.json` hook installation on every run, and 64 dependency vulnerabilities (5 critical). Also added deployment configuration needed for multi-machine relay setups (e.g., reverse-proxy or container deployments).
+
 ### Security
 - Telemetry completely removed — deleted all telemetry code (`scripts/telemetry.ts` and `scripts/telemetry/`) and its test suites, removed all wiring from app/src/server.ts and scripts/relay.ts. No more installation ID, no more `~/.agent-flow/telemetry/` directory, no more outbound calls to upstream telemetry endpoints
 - Next.js built-in telemetry disabled via `NEXT_TELEMETRY_DISABLED=1` environment variable (set in web/package.json and root package.json dev/build scripts)
@@ -29,6 +33,41 @@
 - New documentation:
   - `docs/AUDIT-2026-11.md` — line-by-line audit findings and security verdict
   - `docs/INTEGRATION-PLAN.md` — deployment plan for running Agent Flow in production
+
+### Files Changed
+
+- **Telemetry removal**: `scripts/telemetry.ts`, `scripts/telemetry/` (deleted), `app/src/server.ts`, `scripts/relay.ts`, `web/package.json`, `package.json`
+- **Hook opt-in**: `app/src/app.ts`, `app/src/args.ts`
+- **Configuration**: `extension/src/constants.ts`, `extension/src/request-guard.ts`, `app/src/server.ts`
+- **Dependencies**: `web/package.json`, `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`
+- **Deployment**: `Dockerfile`, `.dockerignore`
+- **Documentation**: `docs/AUDIT-2026-11.md`, `docs/INTEGRATION-PLAN.md`, `README.md`, `CHANGELOG.md`
+
+### How to Roll Back
+
+1. **To undo all changes in this release**, revert the commit:
+   ```bash
+   git revert <commit-hash>
+   pnpm i  # restore previous lock file
+   ```
+
+2. **To selectively restore telemetry** (not recommended), reset those specific files:
+   ```bash
+   git checkout HEAD~1 scripts/telemetry.ts scripts/telemetry/ app/src/server.ts scripts/relay.ts
+   pnpm i
+   ```
+
+3. **To re-enable automatic hook installation** (not recommended):
+   ```bash
+   git checkout HEAD~1 app/src/app.ts app/src/args.ts
+   # Then remove --setup-hooks flag or AGENT_FLOW_SETUP_HOOKS env var usage
+   ```
+
+4. **To restore older dependencies**, revert `web/package.json` and `pnpm-lock.yaml`:
+   ```bash
+   git checkout HEAD~1 web/package.json pnpm-lock.yaml
+   pnpm i
+   ```
 
 ## upstream versions
 
