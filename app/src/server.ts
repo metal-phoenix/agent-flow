@@ -3,37 +3,32 @@
  * Reuses the extension's hook server, transcript parser, and session watcher.
  */
 import * as http from 'http'
-import * as os from 'os'
-import * as path from 'path'
 import { exec, execFile } from 'child_process'
 
 import { createRelay } from '../../scripts/relay'
-import { createTelemetryClient } from '../../scripts/telemetry'
 import { serveStatic } from './static'
-import { isLoopbackHost } from '../../extension/src/request-guard'
+import { isAllowedRequestHost } from '../../extension/src/request-guard'
 
 interface ServerOptions {
   port: number
+  host: string
   openBrowser: boolean
   workspace: string
   verbose?: boolean
 }
 
 export async function startServer(options: ServerOptions) {
-  const { port, openBrowser, workspace } = options
+  const { port, host, openBrowser, workspace } = options
 
-  const configDir = path.join(os.homedir(), '.agent-flow')
-  const telemetry = createTelemetryClient({
-    logDir: path.join(configDir, 'telemetry'),
-    installIdPath: path.join(configDir, 'installation-id'),
-  })
-  await telemetry.init()
+  const relay = await createRelay({ workspace, verbose: options.verbose })
 
-  const relay = await createRelay({ workspace, verbose: options.verbose, telemetry })
+  // Requests that don't match a loopback Host header, or the configured
+  // AGENT_FLOW_ALLOWED_HOST (set when running behind a reverse proxy), are
+  // rejected outright — see request-guard.ts.
+  const allowedHost = process.env.AGENT_FLOW_ALLOWED_HOST
 
   const server = http.createServer((req, res) => {
-    // Reject DNS-rebinding requests, which reach 127.0.0.1 under a foreign Host.
-    if (!isLoopbackHost(req.headers.host)) {
+    if (!isAllowedRequestHost(req.headers.host, allowedHost)) {
       res.writeHead(403, { 'Content-Type': 'text/plain' })
       res.end('Forbidden')
       return
@@ -53,9 +48,13 @@ export async function startServer(options: ServerOptions) {
     res.end('Not found')
   })
 
-  server.listen(port, '127.0.0.1', () => {
-    const url = `http://127.0.0.1:${port}`
+  server.listen(port, host, () => {
+    const displayHost = host === '0.0.0.0' ? '127.0.0.1' : host
+    const url = `http://${displayHost}:${port}`
     console.log(`Server running at ${url}`)
+    if (host !== '127.0.0.1' && host !== 'localhost') {
+      console.log(`Bound to ${host} — make sure AGENT_FLOW_ALLOWED_HOST matches the Host header reaching this server (e.g. a reverse proxy's upstream Host).`)
+    }
     console.log('Waiting for agent events...\n')
 
     if (openBrowser) {
@@ -64,15 +63,14 @@ export async function startServer(options: ServerOptions) {
   })
 
   // Cleanup on exit. Idempotent — repeat signals (Ctrl+C spam, SIGTERM+SIGHUP,
-  // etc.) would otherwise emit duplicate session_end events and race the
-  // telemetry sync loop against itself.
+  // etc.) would otherwise run the shutdown twice.
   let shuttingDown = false
   function cleanup() {
     if (shuttingDown) return
     shuttingDown = true
     server.close()
     relay.dispose()
-    void telemetry.dispose().finally(() => process.exit(0))
+    process.exit(0)
   }
   process.on('SIGINT', cleanup)
   process.on('SIGTERM', cleanup)

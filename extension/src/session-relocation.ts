@@ -17,19 +17,23 @@ import { WatchedSession } from './protocol'
 import { TranscriptParser } from './transcript-parser'
 import { SubagentWatcherDelegate, moveSubagentWatchers, scanExtraSubagentDirs } from './subagent-watcher'
 
-function projectDirs(projectsRoot: string): string[] {
-  try {
-    return fs.readdirSync(projectsRoot, { withFileTypes: true })
-      .filter(d => d.isDirectory())
-      .map(d => path.join(projectsRoot, d.name))
-  } catch { return [] }
+function projectDirs(projectsRoots: string | string[]): string[] {
+  const roots = Array.isArray(projectsRoots) ? projectsRoots : [projectsRoots]
+  return roots.flatMap(root => {
+    try {
+      return fs.readdirSync(root, { withFileTypes: true })
+        .filter(d => d.isDirectory())
+        .map(d => path.join(root, d.name))
+    } catch { return [] }
+  })
 }
 
-/** The newest `<sessionId>.jsonl` directly under any project folder, or null. */
-export function findSessionTranscript(projectsRoot: string, sessionId: string): string | null {
+/** The newest `<sessionId>.jsonl` directly under any project folder, or null.
+ *  `projectsRoots` may be a single transcript root or several (AGENT_FLOW_ROOTS). */
+export function findSessionTranscript(projectsRoots: string | string[], sessionId: string): string | null {
   let best: string | null = null
   let bestMtime = -1
-  for (const dir of projectDirs(projectsRoot)) {
+  for (const dir of projectDirs(projectsRoots)) {
     const candidate = path.join(dir, `${sessionId}.jsonl`)
     try {
       const mtime = fs.statSync(candidate).mtimeMs
@@ -40,8 +44,8 @@ export function findSessionTranscript(projectsRoot: string, sessionId: string): 
 }
 
 /** Every `<project>/<sessionId>/subagents` folder that exists. */
-export function findSubagentsDirs(projectsRoot: string, sessionId: string): string[] {
-  return projectDirs(projectsRoot)
+export function findSubagentsDirs(projectsRoots: string | string[], sessionId: string): string[] {
+  return projectDirs(projectsRoots)
     .map(dir => path.join(dir, sessionId, 'subagents'))
     .filter(dir => fs.existsSync(dir))
 }
@@ -59,11 +63,11 @@ export function followSession(
   delegate: SubagentWatcherDelegate,
   parser: TranscriptParser,
   session: WatchedSession,
-  projectsRoot: string,
+  projectsRoots: string | string[],
 ): boolean {
   let moved = false
   if (!fs.existsSync(session.filePath)) {
-    const found = findSessionTranscript(projectsRoot, session.sessionId)
+    const found = findSessionTranscript(projectsRoots, session.sessionId)
     if (found && found !== session.filePath) {
       const oldSubagentsDir = session.subagentsDir
       const newSubagentsDir = path.join(path.dirname(found), session.sessionId, 'subagents')
@@ -78,7 +82,7 @@ export function followSession(
     }
   }
 
-  const extra = findSubagentsDirs(projectsRoot, session.sessionId).filter(d => d !== session.subagentsDir)
+  const extra = findSubagentsDirs(projectsRoots, session.sessionId).filter(d => d !== session.subagentsDir)
   if (extra.length > 0) {
     scanExtraSubagentDirs(delegate, parser, session.sessionId, extra)
   }
