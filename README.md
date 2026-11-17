@@ -182,6 +182,26 @@ docker compose up -d --build
 - **Hooks are not installed** (`AGENT_FLOW_SETUP_HOOKS` unset) and telemetry does not exist in this fork.
 - `AGENT_FLOW_ALLOWED_HOST` must equal the Host header the proxy sends (default `agent-flow:3001`).
 
+### Prodigy runbook (deployed URL, commands, health check)
+
+Default URL: **`http://agent-flow:3001`** on the `lifeos` docker network (reached through the LifeOS proxy; no host port published). Optional direct LAN/tailscale access: set `AGENT_FLOW_BIND` (private IP only, never 0.0.0.0) and `AGENT_FLOW_PORT` (default 3001) in `.env`, set `AGENT_FLOW_ALLOWED_HOST` to the `ip:port` browsers use, then start with the `docker-compose.lan.yml` override; URL is `http://<AGENT_FLOW_BIND>:<AGENT_FLOW_PORT>`.
+
+```bash
+# before first start: is the port free? (pick another AGENT_FLOW_PORT if not)
+ss -ltn | grep ':3001 ' || echo free
+docker network inspect lifeos >/dev/null 2>&1 || docker network create lifeos
+
+docker compose up -d --build                                   # start (proxy-only)
+docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d --build   # start + LAN/tailscale port
+docker compose stop                                            # stop
+git pull && docker compose up -d --build                       # update
+docker compose down                                            # remove / roll back
+scripts/healthcheck.sh                                         # in-container check of UI + /stats
+scripts/healthcheck.sh http://<bind-ip>:3001 <bind-ip>:3001    # check via the LAN port
+```
+
+If the health check fails, run `docker compose down` and check `docker compose logs agent-flow`. Container restarts automatically (`restart: unless-stopped`). GitHub Actions are not enabled for this fork; hooks stay off.
+
 ### Stats endpoint
 
 `GET /stats?days=7` (full JSON) and `GET /stats/flat` (flat keys for Home Assistant REST sensors) report helpers running now (sub-agent transcripts modified in the last 120 s), helpers/tool calls/tokens/cost per job, per model family and per day. A "job" is the Claude project directory (encoded working directory). Costs are **API-equivalent estimates**: Max-plan work is not billed per token. Prices live in one file, [config/pricing.json](config/pricing.json) (USD per million tokens; override with `AGENT_FLOW_PRICING`); check them against current Anthropic pricing. Transcripts are only read, never written.

@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased (metal-phoenix fork — 2026-11-17, deploy job 274)
+
+### Why
+Deployment prep for Prodigy. The Builder sandbox has no docker, `ss` or access to Prodigy, so the deploy itself still has to be run on Prodigy (steps below).
+
+### Added
+- `docker-compose.lan.yml`: optional override publishing the port on one private LAN/tailscale IP only (`AGENT_FLOW_BIND`, `AGENT_FLOW_PORT`).
+- `scripts/healthcheck.sh`: checks UI (200) and `/stats` (JSON); exit non-zero means roll back with `docker compose down`.
+- README "Prodigy runbook": URL/port, start/stop/update/rollback and health-check commands, port-free check.
+
+### Verified
+Job 230 fixes are on main: telemetry code removed, hooks opt-in (`AGENT_FLOW_SETUP_HOOKS`), Dockerfile present. No secrets added (`.env` git-ignored).
+
+### Rollback
+`docker compose down`; revert this commit.
+
 ## Unreleased (metal-phoenix fork — 2026-11-17, Prodigy deployment)
 
 ### Why
