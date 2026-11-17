@@ -1,0 +1,28 @@
+# Lovelace dashboard views for the "Build" tab (UNTESTED: no live HA access).
+# Add under a dashboard's `views:`. Entity ids assume agent-flow-sensors.yaml.
+views:
+  - title: Build
+    path: build
+    icon: mdi:robot-industrial
+    panel: true            # single full-screen card
+    cards:
+      - type: iframe
+        url: https://<lifeos-host>/agent-flow/
+        aspect_ratio: 100%
+  - title: Build stats
+    path: build-stats
+    icon: mdi:chart-box
+    cards:
+      - type: grid
+        columns: 3
+        square: false
+        cards:
+          - {type: tile, entity: sensor.agent_flow_helpers_running, name: Helpers running}
+          - {type: tile, entity: sensor.agent_flow_helpers_running_opus, name: Opus}
+          - {type: tile, entity: sensor.agent_flow_helpers_running_sonnet, name: Sonnet}
+          - {type: tile, entity: sensor.agent_flow_helpers_running_haiku, name: Haiku}
+          - {type: tile, entity: sensor.agent_flow_jobs_running, name: Jobs running}
+          - {type: tile, entity: sensor.agent_flow_tool_calls_today, name: Tool calls today}
+          - {type: tile, entity: sensor.agent_flow_tokens_today, name: Tokens today}
+          - {type: tile, entity: sensor.agent_flow_cost_today, name: Cost today (API-equivalent, not billed)}
+          - {type: tile, entity: sensor.agent_flow_cost_window, name: Cost 7d (API-equivalent, not billed)}

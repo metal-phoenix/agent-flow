@@ -1,0 +1,30 @@
+# Home Assistant configuration.yaml snippet (UNTESTED: no live HA access).
+# One REST poll, many sensors. Auth is TBD: see lifeos-proxy.md.
+rest:
+  - resource: https://<lifeos-host>/agent-flow/stats/flat
+    scan_interval: 30
+    headers:
+      Authorization: !secret agent_flow_token   # e.g. "Bearer <TOKEN>"
+    sensor:
+      - name: Agent Flow helpers running
+        unique_id: agent_flow_helpers_running
+        value_template: "{{ value_json.helpers_running }}"
+        json_attributes: [cost_label, generated_at]
+      - name: Agent Flow helpers running opus
+        value_template: "{{ value_json.helpers_running_opus }}"
+      - name: Agent Flow helpers running sonnet
+        value_template: "{{ value_json.helpers_running_sonnet }}"
+      - name: Agent Flow helpers running haiku
+        value_template: "{{ value_json.helpers_running_haiku }}"
+      - name: Agent Flow jobs running
+        value_template: "{{ value_json.jobs_running }}"
+      - name: Agent Flow tool calls today
+        value_template: "{{ value_json.tool_calls_today }}"
+      - name: Agent Flow tokens today
+        value_template: "{{ value_json.tokens_today }}"
+      - name: Agent Flow cost today
+        value_template: "{{ value_json.cost_today_usd }}"
+        unit_of_measurement: USD   # API-equivalent, not billed on Max
+      - name: Agent Flow cost window
+        value_template: "{{ value_json.cost_window_usd }}"
+        unit_of_measurement: USD   # API-equivalent, last 7 days
