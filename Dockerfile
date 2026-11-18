@@ -35,6 +35,15 @@ ENV AGENT_FLOW_HOST=127.0.0.1
 COPY --from=builder /build/app/dist ./app/dist
 COPY config /app/config
 
+# Discovery files (~/.claude/agent-flow/) are only read by the VS Code
+# extension's hook forwarder — unused in this headless deployment, but the
+# relay still tries to write one. Pre-create it owned by the runtime user so
+# a plain `docker run` (no read-only root fs) works out of the box; under
+# docker-compose's `read_only: true` this path is instead a tmpfs mount (see
+# docker-compose.yml), and in either case a write failure is now non-fatal
+# (see scripts/relay.ts#writeDiscoveryFile).
+RUN mkdir -p /home/node/.claude/agent-flow && chown -R node:node /home/node/.claude
+
 # node:*-slim images ship an unprivileged "node" user (uid 1000) already.
 USER node
 EXPOSE 3001

@@ -164,8 +164,9 @@ This is metal-phoenix's fork of [patoles/agent-flow](https://github.com/patoles/
 2. **Hook installation is opt-in** — pass `--setup-hooks` or set `AGENT_FLOW_SETUP_HOOKS=true` to enable Claude Code hooks; default behavior uses transcript tailing only
 3. **Configurable server binding** — `--host` flag or `AGENT_FLOW_HOST` env var for binding address (default `127.0.0.1`); when binding to non-loopback, set `AGENT_FLOW_ALLOWED_HOST` to match your reverse proxy's Host header
 4. **Multi-root transcript watching** — `AGENT_FLOW_ROOTS` env var (comma-separated paths) to watch transcripts from multiple machines over NFS or sync
-5. **Containerized** — Dockerfile and `.dockerignore` for running the standalone server in production (node:22-slim, non-root user)
-6. **Dependency vulnerabilities fixed** — line-by-line audit completed; `next` and `vite` bumped, transitive deps pinned; `pnpm audit` reduced from 64 to 11 (0 critical)
+5. **Resilient standalone server startup** — the standalone server (`npx agent-flow-app` / Docker; `scripts/relay.ts`) writes a discovery file for the VS Code extension's hook forwarder to find, but no longer crashes if it can't (e.g. a read-only container filesystem): it logs a warning and keeps running, since discovery files aren't needed outside the VS Code extension. The directory is also now configurable via `AGENT_FLOW_DISCOVERY_DIR` (default `~/.claude/agent-flow`). This does not affect the VS Code extension itself, which still uses its own fixed `~/.claude/agent-flow` path.
+6. **Containerized** — Dockerfile and `.dockerignore` for running the standalone server in production (node:22-slim, non-root user)
+7. **Dependency vulnerabilities fixed** — line-by-line audit completed; `next` and `vite` bumped, transitive deps pinned; `pnpm audit` reduced from 64 to 11 (0 critical)
 
 For detailed audit findings and production deployment guidance, see [docs/AUDIT-2026-11.md](docs/AUDIT-2026-11.md) and [docs/INTEGRATION-PLAN.md](docs/INTEGRATION-PLAN.md).
 
