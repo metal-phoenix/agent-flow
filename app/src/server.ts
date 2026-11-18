@@ -7,7 +7,8 @@ import { exec, execFile } from 'child_process'
 
 import { createRelay } from '../../scripts/relay'
 import { serveStatic } from './static'
-import { computeStats, flattenStats } from './stats'
+import { flattenStats } from './stats'
+import { createStatsWatcher } from './stats-watcher'
 import { resolveTranscriptRoots } from '../../extension/src/constants'
 import * as os from 'os'
 import { isAllowedRequestHost } from '../../extension/src/request-guard'
@@ -24,6 +25,11 @@ export async function startServer(options: ServerOptions) {
   const { port, host, openBrowser, workspace } = options
 
   const relay = await createRelay({ workspace, verbose: options.verbose })
+
+  // Builds /stats and /stats/flat in the background and caches the result —
+  // the HTTP handler below only ever reads that cache, so a transcript root
+  // with hundreds of large files can never make a stats request block.
+  const statsWatcher = createStatsWatcher({ roots: resolveTranscriptRoots(os.homedir()) })
 
   // Requests that don't match a loopback Host header, or the configured
   // AGENT_FLOW_ALLOWED_HOST (set when running behind a reverse proxy), are
@@ -43,13 +49,21 @@ export async function startServer(options: ServerOptions) {
     }
 
     // Stats (read-only JSON). /stats = full detail, /stats/flat = HA sensors.
+    // Always served from the in-memory cache built by statsWatcher — never
+    // computed inline, so this never blocks on disk I/O regardless of
+    // transcript root size. `days` is clamped to whatever the watcher has
+    // actually cached (AGENT_FLOW_STATS_WINDOW_DAYS, default 7); it can
+    // narrow the response but can't widen it past what's been scanned.
     if (req.method === 'GET' && req.url && (req.url === '/stats' || req.url.startsWith('/stats?') || req.url === '/stats/flat' || req.url.startsWith('/stats/flat?'))) {
       try {
         const u = new URL(req.url, 'http://localhost')
         const days = Math.min(90, Math.max(1, Number(u.searchParams.get('days')) || 7))
-        const stats = computeStats({ roots: resolveTranscriptRoots(os.homedir()), days })
+        const { stats, warmingUp } = statsWatcher.getSnapshot(days)
+        const body = u.pathname === '/stats/flat'
+          ? { ...flattenStats(stats), warming_up: warmingUp }
+          : { ...stats, warmingUp }
         res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
-        res.end(JSON.stringify(u.pathname === '/stats/flat' ? flattenStats(stats) : stats))
+        res.end(JSON.stringify(body))
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ error: 'stats failed' }))
@@ -88,6 +102,7 @@ export async function startServer(options: ServerOptions) {
     shuttingDown = true
     server.close()
     relay.dispose()
+    statsWatcher.stop()
     process.exit(0)
   }
   process.on('SIGINT', cleanup)

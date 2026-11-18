@@ -18,8 +18,8 @@ Expose the Agent Flow web UI and its stats API through LifeOS so that:
 - Routes the proxy must forward (after prefix strip):
   - `/` and static assets (`/index.js`, `/index.css`).
   - `/events`: Server-Sent Events.
-  - `/stats`: full JSON. Accepts `?days=` (1 to 90, default 7).
-  - `/stats/flat`: flat JSON with the keys HA sensors read. Keys: `helpers_running`, `helpers_running_opus`, `helpers_running_sonnet`, `helpers_running_haiku`, `jobs_running`, `tool_calls_today`, `tokens_today`, `cost_today_usd`, `cost_window_usd`, `window_days`, `cost_label`, `generated_at`.
+  - `/stats`: full JSON with a `warmingUp` boolean field. Accepts `?days=` (1 to 90, default 7), but the effective maximum is clamped to the server's configured `AGENT_FLOW_STATS_WINDOW_DAYS` (default 7) since stats are served from a background cache rather than computed per-request.
+  - `/stats/flat`: flat JSON with the keys HA sensors read. Keys: `helpers_running`, `helpers_running_opus`, `helpers_running_sonnet`, `helpers_running_haiku`, `jobs_running`, `tool_calls_today`, `tokens_today`, `cost_today_usd`, `cost_window_usd`, `window_days`, `cost_label`, `generated_at`, `warming_up`.
 - WebSocket: not needed.
 
 ## Route
@@ -61,7 +61,7 @@ The web UI uses absolute asset and API paths (`/index.js`, `/index.css`, `/event
 - [ ] `GET https://<lifeos-host>/agent-flow/` without a session returns a login redirect or 401, not the UI.
 - [ ] With a valid session, the UI loads, including CSS and JS.
 - [ ] `/agent-flow/events` streams events live (no buffering) and stays open for more than 5 minutes.
-- [ ] `GET /agent-flow/stats` returns the full JSON with `costLabel`.
+- [ ] `GET /agent-flow/stats` returns the full JSON with `costLabel` and `warmingUp` (boolean).
 - [ ] `GET /agent-flow/stats/flat` returns the flat keys listed above.
 - [ ] `GET /agent-flow/stats/flat` with the HA auth method (bearer or allowed IP) returns 200 from Home Assistant.
 - [ ] Requests with a wrong `Host` reach Agent Flow with the `AGENT_FLOW_ALLOWED_HOST` value, not 403.
