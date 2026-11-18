@@ -206,6 +206,21 @@ export function resolveTranscriptRoots(homedir: string, env: NodeJS.ProcessEnv =
   return roots.length > 0 ? roots : [path.join(homedir, '.claude', 'projects')]
 }
 
+/**
+ * Discovery-file directory used by the headless relay (scripts/relay.ts) to
+ * advertise its hook-server port, from `AGENT_FLOW_DISCOVERY_DIR`, or the
+ * default `~/.claude/agent-flow` when unset.
+ *
+ * Configurable so a container can point it at a writable path (e.g. a tmpfs
+ * mount) when the rest of the filesystem is read-only — discovery files are
+ * only consumed by the VS Code extension's hook forwarder and are never
+ * required for the relay/server to run headless.
+ */
+export function resolveDiscoveryDir(homedir: string, env: NodeJS.ProcessEnv = process.env): string {
+  const raw = env.AGENT_FLOW_DISCOVERY_DIR
+  return raw && raw.trim() !== '' ? raw.trim() : path.join(homedir, '.claude', 'agent-flow')
+}
+
 /** Extract a child agent name from a tool_use input block (Agent or Task tool).
  *  Used by both live processing and prescan to avoid duplicating the extraction logic. */
 export function resolveSubagentChildName(input: Record<string, unknown>): string {

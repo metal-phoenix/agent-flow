@@ -21,6 +21,14 @@ services:
       - ${BOB1_TRANSCRIPTS:-/home/scott/builder/home/.claude/projects}:/transcripts/bob1:ro
       - ${BOB2_TRANSCRIPTS:-/srv/agent-flow/bob2-transcripts}:/transcripts/bob2:ro
       - ./config/pricing.json:/config/pricing.json:ro
+    # read_only: true above makes the whole root fs read-only, including
+    # /home/node — the relay needs one writable spot for discovery files
+    # (~/.claude/agent-flow/, only read by the VS Code extension, not used
+    # headless). A failure to write there is now non-fatal regardless, but
+    # the tmpfs (owned by the "node" user, uid/gid 1000 in node:22-slim)
+    # avoids the warning noise under the default path.
+    tmpfs:
+      - /home/node/.claude/agent-flow:uid=1000,gid=1000,mode=0755
     expose: ["3001"]
     networks: [lifeos]
 networks:

@@ -3,7 +3,6 @@
  * Used by both the dev relay server and the standalone app.
  */
 import * as http from 'http'
-import * as crypto from 'crypto'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
@@ -19,12 +18,12 @@ import { CodexSessionWatcher } from '../extension/src/codex-session-watcher'
 import {
   INACTIVITY_TIMEOUT_MS, SCAN_INTERVAL_MS, ACTIVE_SESSION_AGE_S, POLL_FALLBACK_MS,
   SESSION_ID_DISPLAY, SYSTEM_PROMPT_BASE_TOKENS, ORCHESTRATOR_NAME,
-  HOOK_SERVER_NOT_STARTED, WORKSPACE_HASH_LENGTH, resolveTranscriptRoots,
+  HOOK_SERVER_NOT_STARTED, resolveTranscriptRoots,
 } from '../extension/src/constants'
 import { setLogLevel } from '../extension/src/logger'
+import { writeDiscoveryFile, removeDiscoveryFile } from './discovery-file'
 
 const MAX_EVENT_BUFFER = 5000
-const DISCOVERY_DIR = path.join(os.homedir(), '.claude', 'agent-flow')
 /** Transcript roots to watch — `~/.claude/projects` by default, or every path
  *  in `AGENT_FLOW_ROOTS` (comma-separated) when set, e.g. to also watch a
  *  second machine's project folder mounted/synced locally. */
@@ -323,33 +322,6 @@ function scanForActiveSessions(workspace: string) {
     if (!fs.existsSync(root)) continue
     const dirsToScan = multiRoot ? allProjectDirs(root) : matchingProjectDirs(root, workspace)
     for (const dirPath of dirsToScan) scanDirForActiveSessions(dirPath)
-  }
-}
-
-// ─── Discovery file ─────────────────────────────────────────────────────────
-
-function normalizePath(p: string): string {
-  let resolved = path.resolve(p)
-  try { resolved = fs.realpathSync(resolved) } catch {}
-  return resolved
-}
-
-function hashWorkspace(workspace: string): string {
-  return crypto.createHash('sha256').update(normalizePath(workspace)).digest('hex').slice(0, WORKSPACE_HASH_LENGTH)
-}
-
-let discoveryFilePath: string | null = null
-
-function writeDiscoveryFile(port: number, workspace: string) {
-  if (!fs.existsSync(DISCOVERY_DIR)) fs.mkdirSync(DISCOVERY_DIR, { recursive: true })
-  const hash = hashWorkspace(workspace)
-  discoveryFilePath = path.join(DISCOVERY_DIR, `${hash}-${process.pid}.json`)
-  fs.writeFileSync(discoveryFilePath, JSON.stringify({ port, pid: process.pid, workspace: normalizePath(workspace) }, null, 2) + '\n')
-}
-
-function removeDiscoveryFile() {
-  if (discoveryFilePath) {
-    try { fs.unlinkSync(discoveryFilePath) } catch {}
   }
 }
 

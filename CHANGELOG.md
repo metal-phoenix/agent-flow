@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased (metal-phoenix fork — 2026-11-18, build job 301)
+
+### Why
+On Prodigy, the Docker container crash-looped at startup with `Error: ENOENT: no such file or directory, mkdir '/home/node/.claude/agent-flow'`. Root cause: `docker-compose.yml` sets `read_only: true` on the container's root filesystem (with no writable mount at `~/.claude/agent-flow`), but `scripts/relay.ts`'s `writeDiscoveryFile()` unconditionally tried to `mkdirSync`/`writeFileSync` a discovery file there on every startup and threw if it failed, crashing the server. Discovery files are only ever read by the VS Code extension's hook forwarder — they are never needed in this headless server deployment — so a write failure there should never be fatal.
+
+### Added
+- `scripts/discovery-file.ts` (NEW): extracted discovery-file write/remove logic into its own module with try/catch wrapping `writeDiscoveryFile(port, workspace)` — on any failure it logs a warning and returns normally instead of throwing, so the server keeps running with discovery simply unavailable.
+- `extension/src/constants.ts`: added `resolveDiscoveryDir(homedir, env)` returning `env.AGENT_FLOW_DISCOVERY_DIR` (trimmed) if set and non-blank, else the default `path.join(homedir, '.claude', 'agent-flow')`. Mirrors the existing `resolveTranscriptRoots()` pattern.
+- `Dockerfile`: added `RUN mkdir -p /home/node/.claude/agent-flow && chown -R node:node /home/node/.claude` in the runtime stage before `USER node` — so a plain `docker run` has a pre-existing, correctly-owned writable discovery dir out of the box.
+- `docker-compose.yml`: added `tmpfs: - /home/node/.claude/agent-flow:uid=1000,gid=1000,mode=0755` to the agent-flow service — gives that path a writable, node-user-owned (ephemeral) mount so the discovery file write succeeds even with `read_only: true` on the root filesystem. (A plain tmpfs mount with no uid/gid options defaults to root ownership, which still fails for the non-root `node` user — confirmed this during manual testing and added the options.)
+- New environment variable `AGENT_FLOW_DISCOVERY_DIR` (default `~/.claude/agent-flow`): overrides the discovery-file directory for the headless relay/server for users who want to point it at a different writable path. Scoped to `scripts/relay.ts`/`scripts/discovery-file.ts` only — the VS Code extension's own discovery-file writer (`extension/src/discovery.ts`) is unaffected and still uses the fixed `~/.claude/agent-flow` path, since it always runs on a normal (non-containerized) filesystem.
+- `scripts/discovery-file.test.ts` (NEW): tests covering `resolveDiscoveryDir` env var override/default/blank handling, nested parent dir creation, and non-throwing graceful failure when the target path can't be created.
+- `scripts/relay.ts`: now imports `writeDiscoveryFile`/`removeDiscoveryFile` from `./discovery-file`.
+
+### Verified
+- New tests in scripts/discovery-file.test.ts pass, covering env override, mkdir with nested parents, and graceful failure (logging warning) instead of throwing.
+- `docker build .` succeeded. `docker compose up -d --build` with the actual `docker-compose.yml` (`read_only: true`, `cap_drop: [ALL]`, `AGENT_FLOW_HOST=0.0.0.0`, `AGENT_FLOW_ROOTS` pointing at two empty mounted dirs) stayed running past 20 s with no crash and no discovery-file warning (the tmpfs mount made the write succeed). `GET /` → 200; `GET /stats/flat` → 200, JSON body `{"helpers_running":0,"helpers_running_opus":0,"helpers_running_sonnet":0,"helpers_running_haiku":0,"jobs_running":0,"tool_calls_today":0,"tokens_today":0,"cost_today_usd":0,"cost_window_usd":0,"window_days":7,"cost_label":"API-equivalent estimate (Max plan: not billed)","generated_at":"<ISO timestamp>"}`.
+- Also verified the crash fix in isolation: without the tmpfs uid/gid options, the write still failed (EACCES, root-owned tmpfs) but the server logged a warning and kept running instead of crashing — confirming the try/catch (not just the tmpfs mount) is what actually prevents the crash-loop.
+
+### Rollback
+Revert this commit. No lockfile or schema changes.
+
+### Files
+scripts/discovery-file.ts (new), scripts/discovery-file.test.ts (new), scripts/relay.ts, extension/src/constants.ts, Dockerfile, docker-compose.yml
+
 ## Unreleased (metal-phoenix fork — 2026-11-18, build job 296)
 
 ### Why
