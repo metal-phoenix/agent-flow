@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased (metal-phoenix fork — 2026-11-18, build job 302)
+
+### Why
+`GET /stats/flat` and `GET /stats` on the relay server were synchronously computing stats on every HTTP request by walking the entire transcript directory tree and doing blocking `fs.readFileSync` + `JSON.parse`-per-line on each file. On a real transcript root with ~729 files totaling ~2.2GB, this blocked the event loop for 40+ seconds per request and spiked CPU to ~90% and RAM to ~770MB, crashing the container. A previous job's local testing used empty transcript dirs so this was never caught.
+
+### Added
+- `app/src/stats-watcher.ts` (NEW): background incremental stats builder, exporting `createStatsWatcher(opts)`. Polls transcript roots on a timer (default 30 s, or `AGENT_FLOW_STATS_INTERVAL_MS` env var), tracking byte offset + mtime + a running accumulator per file in memory. On each poll: files unchanged since last read are skipped (cheap `stat()` only); files not modified within the configured window (default 7 days, or `AGENT_FLOW_STATS_WINDOW_DAYS` env var) are skipped and evicted (bounds memory). Files with new bytes are streamed in bounded 4MB chunks via `fs/promises` and folded line-by-line into that file's accumulator. `getSnapshot(days)` returns `{ stats, warmingUp }` instantly from the in-memory cache (zero disk I/O, always fast regardless of transcript root size). `warmingUp` is `true` until the first full discovery pass completes. Handles truncated/rotated files (re-parses from scratch) and removed files (evicted on next pass).
+- `app/src/stats.ts`: refactored (no behavior change to its existing exports/tests) — extracted reusable primitives `newAccumulator()`, `addLine(acc, line, table)` (persistent per-file parse accumulator, can be fed one line at a time for incremental reads), `toParsedTranscript(acc)`, `discoverTranscriptFiles(roots)` (pure directory listing, no I/O), and `aggregateStats(entries, opts)` (pure in-memory aggregation over already-parsed per-file entries). `computeStats()` unchanged in behavior/signature — now a thin wrapper. All existing tests in app/src/stats.test.ts pass unmodified.
+- `app/src/stats-watcher.test.ts` (NEW): 13 tests covering warmingUp lifecycle, incremental re-read correctness, stale-file skip+eviction, days-window clamping, removed-file eviction, truncated-file reset, multiple roots, nonexistent-root handling.
+- `app/src/server.ts`: starts `createStatsWatcher({ roots: resolveTranscriptRoots(os.homedir()) })` on startup (non-blocking, doesn't delay `server.listen()`), stops it in the existing `cleanup()` handler. `/stats` and `/stats/flat` GET handlers now call `statsWatcher.getSnapshot(days)` (instant, in-memory read) instead of `computeStats()`. Each response gains a new `warmingUp`/`warming_up` field (camelCase for `/stats`, snake_case for `/stats/flat`, consistent with other fields).
+- New environment variables (default-configurable via `AGENT_FLOW_STATS_WINDOW_DAYS` and `AGENT_FLOW_STATS_INTERVAL_MS`): control how many days back the background watcher tracks and how often it polls (see README.md).
+
+### Verified
+- Synthetic benchmark (700 `.jsonl` files, 2.27GB, ~787,500 simulated tool calls) on a real machine: first `GET /stats/flat` response returned in 17ms (HTTP 200, `warming_up: true`) while full background warmup was still in progress; full warmup of all 700 files took ~12 seconds using ~1 CPU core, peak RSS ~475MB; steady-state idle `/stats/flat` responses in 5–8ms, idle RSS settled at ~186–193MB (vs. the ~770MB reported for a comparable dataset in the original bug), CPU dropped to idle between polls.
+- `GET /` stayed at 200 throughout the warmup scan — container liveness unaffected.
+- All 13 new tests in app/src/stats-watcher.test.ts pass.
+- All 5 existing tests in app/src/stats.test.ts pass unmodified.
+- `?days=` query param on `/stats` and `/stats/flat` is now clamped to the background watcher's cached window (the configured `AGENT_FLOW_STATS_WINDOW_DAYS`, default 7, not 90). The response's own `windowDays` field honestly reflects the clamped value. Operators who want the full 90-day range need to set `AGENT_FLOW_STATS_WINDOW_DAYS=90` (note: larger windows increase background scan time and memory).
+
+### Rollback
+Revert this commit. No lockfile or schema changes.
+
+### Files
+app/src/stats.ts, app/src/stats-watcher.ts (new), app/src/stats-watcher.test.ts (new), app/src/server.ts, README.md, docs/ha/lifeos-proxy.md
+
 ## Unreleased (metal-phoenix fork — 2026-11-18, build job 301)
 
 ### Why

@@ -209,6 +209,8 @@ If the health check fails, run `docker compose down` and check `docker compose l
 
 `GET /stats?days=7` (full JSON) and `GET /stats/flat` (flat keys for Home Assistant REST sensors) report helpers running now (sub-agent transcripts modified in the last 120 s), helpers/tool calls/tokens/cost per job, per model family and per day. A "job" is the Claude project directory (encoded working directory). Costs are **API-equivalent estimates**: Max-plan work is not billed per token. Prices live in one file, [config/pricing.json](config/pricing.json) (USD per million tokens; override with `AGENT_FLOW_PRICING`); check them against current Anthropic pricing. Transcripts are only read, never written.
 
+Stats are built incrementally in the background (never blocking HTTP requests) and cached in memory, so `/stats` and `/stats/flat` return instantly. Configure the background scan window and polling interval with `AGENT_FLOW_STATS_WINDOW_DAYS` (default 7 days) and `AGENT_FLOW_STATS_INTERVAL_MS` (default 30 seconds). The `?days=` query param is clamped to the configured window; both responses include a `warming_up` / `warmingUp` field (true until the first full discovery pass completes).
+
 Home Assistant files (Build view, REST sensors, LifeOS proxy spec) are in [docs/ha/](docs/ha/). Not yet tested against a live Home Assistant.
 
 ## License
