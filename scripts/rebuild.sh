@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Rebuild + (re)start Agent Flow and regenerate the SBOM. Use instead of a bare
 # `docker compose up -d --build` so sbom/ and Argus's copy never go stale.
-# Extra args go to docker compose (e.g. -f docker-compose.lan.yml).
+# Extra args go to docker compose (e.g. -f docker-compose.yml -f docker-compose.lan.yml: the override alone has no build).
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"

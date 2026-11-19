@@ -32,11 +32,11 @@ install_syft() {
   case "$(uname -m)" in x86_64|amd64) arch=amd64;; aarch64|arm64) arch=arm64;; *) die "unsupported arch $(uname -m)";; esac
   var="SYFT_SHA256_${os}_${arch}"; want="${!var:-}"
   [ -n "$want" ] || die "no pinned checksum for ${os}_${arch}"
-  tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' RETURN
+  tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
   curl -fsSL -o "$tmp/syft.tgz" "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_${os}_${arch}.tar.gz"
   echo "$want  $tmp/syft.tgz" | sha256sum -c - >/dev/null || die "syft checksum mismatch"
   tar -xzf "$tmp/syft.tgz" -C "$tmp" syft
-  mkdir -p "$BIN_DIR"; install -m 0755 "$tmp/syft" "$BIN_DIR/syft-${SYFT_VERSION}"
+  mkdir -p "$BIN_DIR"; install -m 0755 "$tmp/syft" "$BIN_DIR/syft-${SYFT_VERSION}"; rm -rf "$tmp"
 }
 
 if [ -n "${SYFT_BIN:-}" ]; then SYFT="$SYFT_BIN"
@@ -51,7 +51,7 @@ fi
 docker image inspect "$IMAGE" >/dev/null 2>&1 || die "image '$IMAGE' not found (build it first)"
 
 # Base image: last FROM in the Dockerfile (the runtime stage) + its digest.
-BASE_REF="$(awk 'toupper($1)=="FROM"{r=$2} END{print r}' "$ROOT/Dockerfile")"
+BASE_REF="$(awk 'toupper($1)=="FROM"{i=2; while ($i ~ /^--/) i++; r=$i} END{print r}' "$ROOT/Dockerfile")"
 BASE_DIGEST="$(docker image inspect "$BASE_REF" --format '{{index .RepoDigests 0}}' 2>/dev/null || true)"
 [ -n "$BASE_DIGEST" ] || BASE_DIGEST="$(docker image inspect "$BASE_REF" --format '{{.Id}}' 2>/dev/null || echo unknown)"
 BUILD_DATE="$(docker image inspect "$IMAGE" --format '{{.Created}}' 2>/dev/null || date -u +%FT%TZ)"
