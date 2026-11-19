@@ -176,7 +176,7 @@ For detailed audit findings and production deployment guidance, see [docs/AUDIT-
 
 ```bash
 cp .env.example .env          # edit paths; .env is git-ignored
-docker compose up -d --build
+scripts/rebuild.sh            # build + start, then regenerate the SBOM
 ```
 
 - **No public port**: the service only `expose`s 3001 on the external docker network `lifeos` (override with `LIFEOS_NETWORK`). The LifeOS proxy must join that network; see [docs/ha/lifeos-proxy.md](docs/ha/lifeos-proxy.md) for the route needed.
@@ -194,16 +194,20 @@ Default URL: **`http://agent-flow:3001`** on the `lifeos` docker network (reache
 ss -ltn | grep ':3001 ' || echo free
 docker network inspect lifeos >/dev/null 2>&1 || docker network create lifeos
 
-docker compose up -d --build                                   # start (proxy-only)
-docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d --build   # start + LAN/tailscale port
+scripts/rebuild.sh                                             # start (proxy-only)
+scripts/rebuild.sh -f docker-compose.yml -f docker-compose.lan.yml   # start + LAN/tailscale port
 docker compose stop                                            # stop
-git pull && docker compose up -d --build                       # update
+git pull && scripts/rebuild.sh                                 # update
 docker compose down                                            # remove / roll back
 scripts/healthcheck.sh                                         # in-container check of UI + /stats
 scripts/healthcheck.sh http://<bind-ip>:3001 <bind-ip>:3001    # check via the LAN port
 ```
 
 If the health check fails, run `docker compose down` and check `docker compose logs agent-flow`. Container restarts automatically (`restart: unless-stopped`). GitHub Actions are not enabled for this fork; hooks stay off.
+
+### Package inventory (SBOM)
+
+The container's package inventory is in [sbom/](sbom/): `sbom/agent-flow.cdx.json` (CycloneDX JSON, syft 1.18.1) and `sbom/agent-flow.md` (readable table with base image digest, build date and git sha). `scripts/rebuild.sh` regenerates them on every deploy via `scripts/sbom.sh`, and the CycloneDX file is copied to `/home/scott/sbom/agent-flow/` on Prodigy for Argus's nightly security check. The files are not yet generated in the repo; they appear after the first run of `scripts/rebuild.sh` on a machine with docker. See [sbom/README.md](sbom/README.md) for details.
 
 ### Stats endpoint
 
