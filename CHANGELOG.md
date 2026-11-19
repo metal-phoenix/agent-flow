@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased (metal-phoenix fork — 2026-11-20, build job 424)
+
+### What
+- `scripts/sbom.sh` (NEW): generates the package inventory for the Agent Flow image. Scans `agent-flow:local` (or a given image) with syft 1.18.1 and writes `sbom/agent-flow.cdx.json` (CycloneDX JSON) and `sbom/agent-flow.md` (table of name, version and type, plus base image and digest, build date and git sha). syft is pinned and sha256-verified, installed to git-ignored `.bin/`. Env: `SBOM_SKIP_BUILD`, `SBOM_PUBLISH_DIR`, `SYFT_BIN`. On Prodigy the CycloneDX file is also copied to `/home/scott/sbom/agent-flow/`.
+- `scripts/rebuild.sh` (NEW): wraps `docker compose up -d --build` (extra args are passed to compose) and then runs `scripts/sbom.sh`. An SBOM failure prints a warning and does not fail the deploy.
+- `sbom/README.md` (NEW): explains the SBOM files, how they are generated and published, and states that the generated files are not yet in the repo (they appear after the first run of `scripts/rebuild.sh` or `scripts/sbom.sh` on a machine with docker).
+- `README.md`: Prodigy deploy and runbook commands now use `scripts/rebuild.sh` instead of `docker compose up -d --build`. New "Package inventory (SBOM)" paragraph linking `sbom/`.
+- `.gitignore`: added `.bin/` (local tool installs such as syft).
+
+### Why
+Argus (metal-phoenix/argus, nightly security check) needs a current package inventory of the Prodigy container. Deploys using a bare `docker compose up -d --build` would leave that inventory stale, so the deploy path now regenerates it. This change adds no runtime code; the container and app behaviour are unchanged.
+
+### Files
+scripts/sbom.sh (new), scripts/rebuild.sh (new), sbom/README.md (new), README.md, CHANGELOG.md, .gitignore (.bin/)
+
+### Rollback
+Revert this commit. Then delete `/home/scott/sbom/agent-flow` on Prodigy so Argus no longer finds a stale inventory.
+
 ## Unreleased (metal-phoenix fork — 2026-11-18, build job 302)
 
 ### Why
